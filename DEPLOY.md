@@ -50,7 +50,7 @@ Vérifie : `node --version` doit afficher v22.x.
 **Option A (recommandée) — GitHub :** on pousse le projet sur un dépôt **privé**, puis :
 
 ```bash
-git clone https://github.com/TON_PSEUDO/romeo-bot.git && cd romeo-bot
+git clone https://github.com/0xcsanta/roemeo.git && cd roemeo
 ```
 
 **Option B — sans GitHub :** sur ton PC, zippe le dossier **sans** `node_modules` ni `.env`, envoie-le puis décompresse :
@@ -134,7 +134,7 @@ Désormais le bot **ignore tout autre compte**.
 
 ## Étape 9 — Mettre à jour plus tard
 
-- **Option A (GitHub)** : `cd romeo-bot && git pull && npm install --omit=optional && pm2 restart romeo`
+- **Option A (GitHub)** : `cd roemeo && git pull && npm install --omit=optional && pm2 restart romeo`
 - **Option B (zip)** : renvoie le zip, décompresse par-dessus, puis `pm2 restart romeo`.
 
 ---
