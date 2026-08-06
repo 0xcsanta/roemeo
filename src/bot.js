@@ -1,17 +1,8 @@
 import { Bot } from 'grammy'
-import { config } from './config.js'
-import { db, addSubscriber, addWatch, listWatches, removeWatch, setWatchStatus } from './db.js'
+import { config, isAllowedChat } from './config.js'
+import { db, addSubscriber, addWatch, listWatches, removeWatch } from './db.js'
 import { searchEvents } from './ticketmaster.js'
-import { detectPlatform } from './platforms.js'
-import { checkUrl } from './pagewatch.js'
-import {
-  evaluateEvent,
-  eventSummary,
-  eventKeyboard,
-  pageKeyboard,
-  escHtml,
-  STATUS_LABEL,
-} from './events.js'
+import { evaluateEvent, eventSummary, eventKeyboard } from './events.js'
 
 export const bot = new Bot(config.telegramToken)
 
@@ -21,17 +12,17 @@ bot.command('whoami', (ctx) =>
 )
 
 // Garde d'accès : si une liste blanche est définie, on ignore les autres comptes.
+// (La même garde est appliquée à l'envoi — voir isAllowedChat.)
 bot.use(async (ctx, next) => {
-  const ids = config.allowedChatIds
   const chatId = ctx.chat?.id
-  if (ids.length === 0) {
-    if (chatId) {
-      console.log(`👤 chat ${chatId} — ${ctx.from?.first_name ?? ''} @${ctx.from?.username ?? ''}`)
-    }
-    return next()
+  if (!isAllowedChat(chatId)) {
+    await ctx.reply('⛔ Accès restreint à cet assistant.').catch(() => {})
+    return
   }
-  if (chatId && ids.includes(chatId)) return next()
-  await ctx.reply('⛔ Accès restreint à cet assistant.').catch(() => {})
+  if (config.allowedChatIds.length === 0 && chatId) {
+    console.log(`👤 chat ${chatId} — ${ctx.from?.first_name ?? ''} @${ctx.from?.username ?? ''}`)
+  }
+  return next()
 })
 
 const HELP = [
@@ -39,11 +30,14 @@ const HELP = [
   '',
   "Je te préviens dès qu'un event ouvre à la vente. L'achat reste un clic humain.",
   '',
-  '<b>Suivre quelque chose</b>',
-  '• /watch &lt;artiste&gt; — veille internationale via l’API Ticketmaster',
+  '<b>Suivre un artiste</b>',
+  '• /watch &lt;artiste&gt; — veille mondiale via l’API Ticketmaster',
   '   ex : <code>/watch Coldplay</code>',
-  '• /watch &lt;lien&gt; — veille d’une page FR (Ticketmaster.fr, Fnac…)',
-  '   ex : <code>/watch https://www.ticketmaster.fr/event/…</code>',
+  '',
+  '<b>Pour la France</b>',
+  'L’API ne couvre pas la France. Crée l’alerte directement sur le site de la',
+  'billetterie (Ticketmaster.fr, Fnac…) avec l’adresse mail dédiée : je relaie',
+  'le mail ici, avec le lien, dès qu’il arrive.',
   '',
   '<b>Gérer</b>',
   '• /list — mes veilles',
@@ -59,17 +53,28 @@ bot.command(['start', 'help'], async (ctx) => {
 
 bot.command('watch', async (ctx) => {
   const arg = ctx.match?.trim()
-  if (!arg) {
+  if (!arg) return ctx.reply('Usage : /watch <artiste>   ex : /watch Coldplay')
+
+  // Les billetteries FR (Ticketmaster.fr, Fnac) sont derrière un anti-bot : on ne
+  // lit pas leurs pages. L'alerte officielle du site + le relais email font le job.
+  if (/^https?:\/\//i.test(arg)) {
     return ctx.reply(
-      'Usage :\n• /watch <artiste>  (international)\n• /watch <lien d’un event>  (France : ticketmaster.fr, Fnac…)'
+      [
+        'ℹ️ Je ne surveille pas les pages web.',
+        '',
+        'Pour un event français : clique « Créer une alerte » sur la page de la billetterie',
+        'avec l’adresse mail dédiée. Dès que le mail arrive, je te le relaie ici avec le lien.',
+        '',
+        'Pour un artiste : /watch <nom de l’artiste>.',
+      ].join('\n')
     )
   }
+
   await addSubscriber(ctx.chat.id)
-  if (/^https?:\/\//i.test(arg)) return addPageWatch(ctx, arg)
   return addTmWatch(ctx, arg)
 })
 
-// ─────────── Veille internationale (API Ticketmaster) ───────────
+// ─────────── Veille mondiale (API Ticketmaster) ───────────
 async function addTmWatch(ctx, keyword) {
   const watch = await addWatch(ctx.chat.id, { type: 'tm', keyword })
 
@@ -91,7 +96,7 @@ async function addTmWatch(ctx, keyword) {
 
   if (events.length === 0) {
     return ctx.reply(
-      `✅ Veille #${watch.id} créée pour « ${keyword} » (international). Aucun event listé pour l'instant — je te préviens dès qu'il y en a.`
+      `✅ Veille #${watch.id} créée pour « ${keyword} ». Aucun event listé pour l'instant — je te préviens dès qu'il y en a.`
     )
   }
 
@@ -104,45 +109,13 @@ async function addTmWatch(ctx, keyword) {
   }
 }
 
-// ─────────── Veille d'une page FR (Playwright) ───────────
-async function addPageWatch(ctx, url) {
-  if (!config.pageWatchEnabled) {
-    return ctx.reply(
-      'ℹ️ La surveillance de page est désactivée ici (serveur sans écran). Pour Ticketmaster.fr et Fnac, passe par le relais email — tu seras alerté pareil.'
-    )
-  }
-  const platform = detectPlatform(url)
-  if (!platform) return ctx.reply('Lien invalide. Colle l’URL complète de la page de l’event.')
-
-  const watch = await addWatch(ctx.chat.id, { type: 'page', url, platform: platform.name })
-  const note = platform.generic ? ' (plateforme non optimisée — surveillance basique)' : ''
-  await ctx.reply(`⏳ Veille #${watch.id} créée sur ${platform.name}${note}. Je lis la page…`)
-
-  try {
-    const { status, title } = await checkUrl(url)
-    await setWatchStatus(watch.id, status)
-    await ctx.reply(
-      `✅ Surveillance active — <b>${escHtml(title)}</b>\n📊 Statut actuel : ${STATUS_LABEL[status]}\n\nJe t’alerte dès que ça passe en vente.`,
-      { parse_mode: 'HTML', reply_markup: pageKeyboard(watch) }
-    )
-  } catch (err) {
-    await ctx.reply(
-      `Veille #${watch.id} créée, mais lecture impossible pour l’instant (${err.message}). Je réessaie au prochain cycle.`
-    )
-  }
-}
-
 // ─────────── Gestion ───────────
 bot.command('list', async (ctx) => {
   const watches = listWatches(ctx.chat.id)
   if (watches.length === 0) {
-    return ctx.reply('Aucune veille. Ajoutes-en une avec /watch <artiste> ou /watch <lien>.')
+    return ctx.reply('Aucune veille. Ajoutes-en une avec /watch <artiste>.')
   }
-  const lines = watches.map((w) =>
-    w.type === 'page'
-      ? `#${w.id} — 🌐 ${w.platform} — ${STATUS_LABEL[w.lastStatus] ?? '⚪ —'}`
-      : `#${w.id} — 🔎 ${w.keyword} (international)`
-  )
+  const lines = watches.map((w) => `#${w.id} — 🔎 ${w.keyword ?? '(veille obsolète)'}`)
   await ctx.reply(`🎯 Tes veilles :\n${lines.join('\n')}`)
 })
 
@@ -156,6 +129,6 @@ bot.command('unwatch', async (ctx) => {
 bot.command('check', async (ctx) => {
   await ctx.reply('🔎 Vérification en cours…')
   const { runWatchCycle } = await import('./watcher.js') // import dynamique = pas de cycle d'import
-  await runWatchCycle()
-  await ctx.reply('✅ Terminé.')
+  const done = await runWatchCycle()
+  await ctx.reply(done ? '✅ Terminé.' : 'ℹ️ Un cycle était déjà en cours — tu auras les alertes dans quelques secondes.')
 })

@@ -1,7 +1,7 @@
 import { bot } from './bot.js'
-import { db } from './db.js'
+import { alertRecipients } from './db.js'
+import { config } from './config.js'
 import { startWatcher } from './watcher.js'
-import { closeBrowser } from './browser.js'
 import { emailConfigured, startEmailWatch } from './email.js'
 import { emailAlert } from './events.js'
 
@@ -10,26 +10,36 @@ async function main() {
 
   const timer = startWatcher()
 
-  // Veille email (optionnelle) : relaie chaque alerte reçue à tous les abonnés.
+  // Veille email (optionnelle) : relaie chaque alerte reçue aux abonnés autorisés.
+  // Une panne de mail ne doit jamais empêcher le bot Telegram de tourner.
   let stopEmail = null
   if (emailConfigured()) {
-    stopEmail = await startEmailWatch(async ({ subject, from, url }) => {
-      const { text, keyboard } = emailAlert({ subject, from, url })
-      for (const chatId of db.data.subscribers) {
-        await bot.api
-          .sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: keyboard })
-          .catch((e) => console.error('[email→tg]', e.message))
-      }
-    })
+    try {
+      stopEmail = await startEmailWatch(async ({ subject, from, url }) => {
+        const { text, keyboard } = emailAlert({ subject, from, url })
+        for (const chatId of alertRecipients()) {
+          await bot.api
+            .sendMessage(chatId, text, { parse_mode: 'HTML', reply_markup: keyboard })
+            .catch((e) => console.error('[email→tg]', e.message))
+        }
+      })
+    } catch (err) {
+      console.error('📧 Veille email indisponible, le bot continue sans :', err.message)
+    }
   } else {
     console.log('📧 Veille email désactivée (IMAP non configuré dans .env).')
+  }
+
+  if (config.allowedChatIds.length === 0) {
+    console.warn(
+      '⚠️  ALLOWED_CHAT_IDS est vide : n\'importe qui trouvant le bot peut s\'abonner et recevoir tes alertes. Remplis-le dès que possible.'
+    )
   }
 
   const shutdown = async () => {
     console.log('\n⏹️  Arrêt en cours…')
     clearInterval(timer)
     if (stopEmail) await stopEmail()
-    await closeBrowser()
     await bot.stop()
     process.exit(0)
   }

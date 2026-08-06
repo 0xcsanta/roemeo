@@ -13,10 +13,11 @@ export async function searchEvents(keyword, { size = 50 } = {}) {
   const params = new URLSearchParams({
     apikey: config.ticketmasterKey,
     keyword,
-    countryCode: config.countryCode,
     size: String(size),
     sort: 'date,asc',
   })
+  // Sans countryCode, l'API cherche dans le monde entier (voir config.countryCode).
+  if (config.countryCode) params.set('countryCode', config.countryCode)
 
   const res = await fetch(`${BASE}?${params}`, { signal: AbortSignal.timeout(15_000) })
 

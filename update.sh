@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 echo "⬇️  Récupération de la dernière version…"
 git pull
 echo "📦 Vérification des dépendances…"
-npm install --omit=optional
+npm install
 echo "🔄 Redémarrage du bot…"
 pm2 restart romeo
 echo "✅ Bot mis à jour et redémarré."

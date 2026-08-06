@@ -2,8 +2,8 @@
 
 Objectif : faire tourner le bot **24/7**, sans ton PC, pour **0 €**.
 
-Sur le serveur, le bot utilise **l'API Ticketmaster (international)** + **le relais email**
-(qui couvre Ticketmaster.fr ET Fnac). Pas de navigateur → `PAGE_WATCH_ENABLED=false`.
+Le bot utilise **l'API Ticketmaster (monde)** + **le relais email** (qui couvre Ticketmaster.fr
+ET Fnac). Aucun navigateur, aucune dépendance lourde : ça tient dans la plus petite VM gratuite.
 
 ---
 
@@ -47,7 +47,7 @@ Vérifie : `node --version` doit afficher v22.x.
 
 ## Étape 5 — Mettre le code sur le serveur
 
-**Option A (recommandée) — GitHub :** on pousse le projet sur un dépôt **privé**, puis :
+**Option A (recommandée) — GitHub :** le dépôt est **public** (aucun secret dedans : le `.env` est ignoré par git). Sur le serveur :
 
 ```bash
 git clone https://github.com/0xcsanta/roemeo.git && cd roemeo
@@ -62,7 +62,7 @@ scp -i ma-cle.key romeo-bot.zip ubuntu@TON_IP:~/ && unzip romeo-bot.zip -d romeo
 Puis installe les dépendances (sans le navigateur, inutile ici) :
 
 ```bash
-npm install --omit=optional
+npm install
 ```
 
 ## Étape 6 — Configurer le `.env` du serveur
@@ -77,14 +77,12 @@ Colle ceci (adapte les valeurs) :
 TELEGRAM_BOT_TOKEN=ton_token
 TICKETMASTER_API_KEY=ta_cle
 
-TM_COUNTRY_CODE=FR
+# Vide = recherche mondiale (l'API TM ne couvre quasiment pas la France)
+TM_COUNTRY_CODE=
 POLL_INTERVAL_MINUTES=10
 ONSALE_SOON_HOURS=24
 
-# Serveur sans écran : pas de navigateur
-PAGE_WATCH_ENABLED=false
-
-# Accès réservé (voir Étape 8 pour récupérer les IDs)
+# Accès réservé : mets DÉJÀ ton ID ici (voir Étape 8), ne laisse pas vide
 ALLOWED_CHAT_IDS=
 
 # Relais email
@@ -96,6 +94,13 @@ EMAIL_POLL_SECONDS=60
 ```
 
 Enregistre : `Ctrl+O`, `Entrée`, puis `Ctrl+X`.
+
+Puis restreins les droits du fichier — il contient le mot de passe d'application Gmail,
+qui donne accès en **lecture à toute la boîte** :
+
+```bash
+chmod 600 .env
+```
 
 ## Étape 7 — Lancer en continu avec pm2
 
@@ -123,18 +128,29 @@ Tu dois voir `✅ Connecté en tant que @...` et `📧 Veille email active`.
 
 ## Étape 8 — Verrouiller l'accès à ton pote (et toi)
 
-1. Ton copain (et toi) ouvre le bot sur Telegram et envoie **`/whoami`** → le bot répond un **ID** (un nombre).
-2. Sur le serveur : `nano .env`, mets les deux IDs dans `ALLOWED_CHAT_IDS`, séparés par une virgule :
+> ⚠️ Tant que `ALLOWED_CHAT_IDS` est **vide**, le bot est ouvert : n'importe qui le trouvant
+> sur Telegram peut s'abonner et recevoir tes alertes (objet et lien de tes mails compris).
+> Ne laisse pas cette fenêtre ouverte.
+
+`/whoami` répond **même aux comptes non autorisés** — tu peux donc verrouiller dès le départ :
+
+1. Envoie **`/whoami`** au bot depuis ton compte → il te donne ton **ID** (un nombre).
+2. Mets-le tout de suite dans `.env` (`nano .env`), puis `pm2 restart romeo`.
+3. Ton copain envoie **`/whoami`** à son tour (ça marche même s'il est bloqué), il te donne son ID.
+4. Ajoute-le, séparé par une virgule, et redémarre :
    ```
    ALLOWED_CHAT_IDS=123456789,987654321
    ```
-3. Applique : `pm2 restart romeo`.
+   ```bash
+   pm2 restart romeo
+   ```
 
-Désormais le bot **ignore tout autre compte**.
+Désormais le bot **ignore tout autre compte** — en réception comme en envoi : un inconnu
+abonné avant le verrouillage cesse immédiatement de recevoir quoi que ce soit.
 
 ## Étape 9 — Mettre à jour plus tard
 
-- **Option A (GitHub)** : `cd roemeo && git pull && npm install --omit=optional && pm2 restart romeo`
+- **Option A (GitHub)** : `cd roemeo && git pull && npm install && pm2 restart romeo`
 - **Option B (zip)** : renvoie le zip, décompresse par-dessus, puis `pm2 restart romeo`.
 
 ---

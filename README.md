@@ -1,20 +1,19 @@
 # 🎟️ Roméo Bot
 
-Bot Telegram de **veille billetterie**. Trois sources complémentaires :
+Bot Telegram de **veille billetterie**. Deux sources complémentaires :
 
-1. **API officielle Ticketmaster** — excellente à l'**international** (UK/US…), quasi vide pour la France.
-2. **Surveillance de pages FR** (Playwright, fenêtre visible) — lit une page **Ticketmaster.fr** et alerte au passage **🟡 bientôt → 🟢 en vente** (ou 🔥 place réapparue).
-3. **Relais d'emails** (IMAP) — récupère les alertes « billets disponibles » envoyées par mail par les billetteries (TM.fr, Fnac…) et les pousse sur Telegram. Couvre ce que le scraping ne peut pas (Fnac est protégé par un anti-bot).
+1. **API officielle Ticketmaster** — recherche **mondiale** par artiste, alerte à l'ouverture des ventes. Quasi vide pour la France.
+2. **Relais d'emails** (IMAP) — récupère les alertes « billets disponibles » envoyées par mail par les billetteries (Ticketmaster.fr, Fnac…) et les pousse sur Telegram. **C'est la solution pour la France.**
 
-> ⚖️ **Périmètre légal.** Veille + alerte uniquement. **Aucun achat automatisé**, aucun contournement de file d'attente : l'achat reste un **clic humain**. Vérifie aussi la légalité de la **revente** (en France, la revente habituelle sans autorisation de l'organisateur est interdite — art. 313-6-2 du Code pénal).
+> ⚖️ **Périmètre légal.** Veille + alerte uniquement. **Aucun achat automatisé**, aucun contournement de file d'attente ni d'anti-bot : l'achat reste un **clic humain**. Vérifie aussi la légalité de la **revente** (en France, la revente habituelle sans autorisation de l'organisateur est interdite — art. 313-6-2 du Code pénal).
 
 ## Ce qui marche (et ce qui ne marche pas)
 
 | Source | État | Note |
 | --- | --- | --- |
-| API Ticketmaster (international) | ✅ | Fiable. |
-| Ticketmaster.fr (pages event) | ✅ **en mode fenêtre visible** | `HEADLESS=false`. En invisible, Datadome sert une page vide. |
-| Fnac Spectacles (scraping) | ❌ | Bloqué par Akamai. → passe par le **relais email**. |
+| API Ticketmaster (monde) | ✅ | Fiable. Laisser `TM_COUNTRY_CODE` vide. |
+| API Ticketmaster (France) | ❌ | Le catalogue FR est quasi vide côté API. → relais email. |
+| Lecture des pages billetterie | ❌ *(retiré)* | Ticketmaster.fr est derrière Datadome, Fnac derrière Akamai. Les contourner sortirait du périmètre légal du projet → fonctionnalité supprimée. |
 | Relais email | ✅ | Marche avec toutes les billetteries qui envoient des alertes mail. |
 
 ## Prérequis
@@ -30,13 +29,7 @@ Bot Telegram de **veille billetterie**. Trois sources complémentaires :
 npm install
 ```
 
-Puis télécharge le navigateur pour la surveillance de pages :
-
-```bash
-npm run setup:browser
-```
-
-Configure enfin le `.env` (copie `.env.example` si besoin) : `TELEGRAM_BOT_TOKEN` et `TICKETMASTER_API_KEY` au minimum.
+Configure ensuite le `.env` (copie `.env.example` si besoin) : `TELEGRAM_BOT_TOKEN` et `TICKETMASTER_API_KEY` au minimum.
 
 ## Lancer
 
@@ -50,9 +43,8 @@ Sur Telegram, envoie `/start` à ton bot.
 
 | Commande | Effet |
 | --- | --- |
-| `/watch <artiste>` | Veille **internationale** via l'API Ticketmaster (ex : `/watch Coldplay`) |
-| `/watch <lien>` | Veille d'une **page FR** (ex : `/watch https://www.ticketmaster.fr/fr/manifestation/...`) |
-| `/list` | Mes veilles + leur statut |
+| `/watch <artiste>` | Veille **mondiale** via l'API Ticketmaster (ex : `/watch Coldplay`) |
+| `/list` | Mes veilles |
 | `/unwatch <id>` | Arrêter une veille |
 | `/check` | Forcer une vérification maintenant |
 | `/help` | Aide |
@@ -79,22 +71,20 @@ Le principe : sur **Ticketmaster.fr, Fnac, etc.**, tu cliques « Créer une aler
 
 | Variable | Défaut | Rôle |
 | --- | --- | --- |
-| `TM_COUNTRY_CODE` | `FR` | Pays pour l'API TM (international) |
+| `TM_COUNTRY_CODE` | *(vide)* | Filtre pays de l'API TM. **Vide = monde entier** (recommandé : l'API est quasi vide pour la FR) |
 | `POLL_INTERVAL_MINUTES` | `10` | Fréquence de la veille |
 | `ONSALE_SOON_HOURS` | `24` | Délai de l'alerte « ouverture imminente » |
-| `HEADLESS` | `false` | `false` = fenêtre visible (requis pour TM.fr) |
-| `PAGE_TIMEOUT_SECONDS` | `30` | Délai max de chargement d'une page |
+| `ALLOWED_CHAT_IDS` | vide | IDs Telegram autorisés (réception **et** envoi). Vide = ouvert à tous |
 | `IMAP_*` | vide | Relais email (vide = désactivé) |
 | `EMAIL_POLL_SECONDS` | `60` | Fréquence de vérif des mails |
 
 ## Limites connues
 
-- **Ticketmaster.fr** exige `HEADLESS=false` : une fenêtre Chrome s'ouvre, donc il faut un **PC allumé** (pas un serveur sans écran).
-- **Fnac** n'est pas scrapable directement → utilise le relais email.
-- Pour du **24/7 sans ton PC** et pour scraper Fnac, il faudrait un **service anti-bot payant** (ScraperAPI, etc.) — évolution possible.
+- L'API Ticketmaster **ne couvre pas la France** : pour un event FR, crée l'alerte sur le site de la billetterie avec l'adresse mail dédiée, le relais email fera le reste.
+- La **lecture des pages** de billetterie a été retirée : Ticketmaster.fr et Fnac sont derrière des anti-bot, et les contourner sortirait du périmètre légal que se fixe le projet.
+- Le relais email ne voit que ce qui **arrive dans la boîte surveillée** — pense à mettre cette adresse sur les comptes billetterie (ou un transfert automatique).
 
 ## Roadmap
 
 - [ ] Dashboard web (mini-app Telegram) : veilles, historique, stats, rappels
-- [ ] Option service anti-bot pour tourner 24/7 sur serveur (+ Fnac)
 - [ ] Passerelle WhatsApp

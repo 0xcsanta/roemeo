@@ -9,8 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "setup:browser": "playwright install chromium"
+    "dev": "node --watch src/index.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
@@ -18,8 +17,5 @@
     "imapflow": "^1.0.164",
     "lowdb": "^7.0.1",
     "mailparser": "^3.7.1"
-  },
-  "optionalDependencies": {
-    "playwright": "^1.47.0"
   }
 }

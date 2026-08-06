@@ -73,21 +73,6 @@ export function evaluateEvent(ev, state, { silent = false } = {}) {
   return alerts
 }
 
-// ─────────────────────────────── Veilles de pages FR (Playwright) ───────────────────────────────
-
-export const STATUS_LABEL = {
-  onsale: '🟢 En vente',
-  soon: '🟡 Bientôt en vente',
-  soldout: '🔴 Complet',
-  cancelled: '⛔ Événement annulé',
-  unknown: '⚪ Statut à confirmer',
-  blocked: '🚧 Lecture bloquée (anti-bot)',
-}
-
-export function pageKeyboard(watch) {
-  return new InlineKeyboard().url('🔗 Ouvrir la page', watch.url)
-}
-
 // ─────────────────────────────── Alertes email relayées ───────────────────────────────
 
 /** Construit le message Telegram pour une alerte billetterie reçue par email. */
@@ -100,22 +85,4 @@ export function emailAlert({ subject, from, url }) {
   ].join('\n')
   const keyboard = url ? new InlineKeyboard().url('🔗 Ouvrir', url) : undefined
   return { text, keyboard }
-}
-
-/** Message d'alerte pour une veille de page (changement de statut). */
-export function pageAlert(watch, status, title, fromSoldout = false) {
-  const head =
-    status === 'onsale'
-      ? fromSoldout
-        ? '🔥 Une place vient de réapparaître — go !'
-        : '🚨 C’EST EN VENTE — go !'
-      : `ℹ️ Changement de statut : ${STATUS_LABEL[status]}`
-
-  return [
-    head,
-    '',
-    `🎟️ <b>${escHtml(title)}</b>`,
-    `🏷️ ${escHtml(watch.platform)}`,
-    `📊 ${STATUS_LABEL[status] ?? status}`,
-  ].join('\n')
 }

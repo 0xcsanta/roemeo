@@ -1,4 +1,7 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { JSONFilePreset } from 'lowdb/node'
+import { isAllowedChat } from './config.js'
 
 // Petite base locale en JSON (db.json). Zéro dépendance native → tourne partout.
 const defaultData = {
@@ -8,10 +11,19 @@ const defaultData = {
   meta: { nextWatchId: 1, lastEmailUid: null },
 }
 
-// Un "watch" est de l'un des deux types :
-//   { id, chatId, type: 'tm',   keyword,               createdAt }
-//   { id, chatId, type: 'page', url, platform, lastStatus?, createdAt }
-export const db = await JSONFilePreset('db.json', defaultData)
+// Un "watch" : { id, chatId, type: 'tm', keyword, createdAt }
+// (les anciennes veilles type: 'page' d'une base existante sont simplement ignorées)
+// Chemin ancré sur le dossier du projet, PAS sur le répertoire courant : sinon un
+// lancement depuis ailleurs (`node ~/roemeo/src/index.js`) crée une base vide et
+// toutes les veilles semblent avoir disparu.
+const dbPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'db.json')
+
+export const db = await JSONFilePreset(dbPath, defaultData)
+
+/** Abonnés autorisés à recevoir une alerte (la liste blanche vaut aussi en sortie). */
+export function alertRecipients() {
+  return db.data.subscribers.filter((chatId) => isAllowedChat(chatId))
+}
 
 export async function addSubscriber(chatId) {
   if (!db.data.subscribers.includes(chatId)) {
@@ -38,12 +50,4 @@ export async function removeWatch(chatId, id) {
   const removed = db.data.watches.length < before
   if (removed) await db.write()
   return removed
-}
-
-export async function setWatchStatus(id, status) {
-  const w = db.data.watches.find((x) => x.id === id)
-  if (w) {
-    w.lastStatus = status
-    await db.write()
-  }
 }

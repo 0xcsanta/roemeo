@@ -1,9 +1,8 @@
-import { db, setWatchStatus } from './db.js'
+import { db } from './db.js'
 import { bot } from './bot.js'
-import { config } from './config.js'
+import { config, isAllowedChat } from './config.js'
 import { searchEvents } from './ticketmaster.js'
-import { checkUrl } from './pagewatch.js'
-import { evaluateEvent, eventSummary, eventKeyboard, pageAlert, pageKeyboard } from './events.js'
+import { evaluateEvent, eventSummary, eventKeyboard } from './events.js'
 
 const HEADERS = {
   new: '🆕 Nouvel event repéré',
@@ -13,7 +12,7 @@ const HEADERS = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-// ─────────── Veille TM (API, international) ───────────
+// ─────────── Veille TM (API, mondiale) ───────────
 async function runTmWatch(watch) {
   const events = await searchEvents(watch.keyword)
   for (const ev of events) {
@@ -34,40 +33,38 @@ async function runTmWatch(watch) {
   await db.write()
 }
 
-// ─────────── Veille de page FR (Playwright) ───────────
-async function runPageWatch(watch) {
-  const { status, title } = await checkUrl(watch.url)
-  const prev = watch.lastStatus ?? 'unknown'
+// Un seul cycle à la fois : /check et le minuteur peuvent tomber en même temps,
+// et deux cycles concurrents enverraient l'alerte en double.
+let cycleRunning = false
 
-  if (status !== prev) {
-    // Seule transition qui déclenche une alerte : ça devient achetable.
-    if (status === 'onsale') {
-      await bot.api
-        .sendMessage(watch.chatId, pageAlert(watch, status, title, prev === 'soldout'), {
-          parse_mode: 'HTML',
-          reply_markup: pageKeyboard(watch),
-        })
-        .catch((e) => console.error(`[envoi page #${watch.id}] ${e.message}`))
-    }
-    await setWatchStatus(watch.id, status)
-  }
-}
-
-/** Un cycle de veille : parcourt toutes les veilles (TM + pages). */
+/**
+ * Un cycle de veille : parcourt toutes les veilles.
+ * Retourne false si un cycle était déjà en cours (rien n'a été fait).
+ */
 export async function runWatchCycle() {
-  for (const watch of db.data.watches) {
-    try {
-      if (watch.type === 'page') {
-        if (!config.pageWatchEnabled) continue // serveur sans écran : on saute
-        await runPageWatch(watch)
-      } else {
-        await runTmWatch(watch)
-      }
-    } catch (err) {
-      console.error(`[veille #${watch.id}] ${err.message}`)
-    }
-    await sleep(300) // petit délai entre les veilles
+  if (cycleRunning) {
+    console.log('[veille] cycle déjà en cours — passage ignoré')
+    return false
   }
+  cycleRunning = true
+  try {
+    for (const watch of db.data.watches) {
+      // La liste blanche vaut aussi en sortie : une veille créée par un inconnu
+      // avant le verrouillage cesse d'émettre.
+      if (!isAllowedChat(watch.chatId)) continue
+      // Anciennes veilles de page d'une base existante : plus supportées.
+      if (watch.type && watch.type !== 'tm') continue
+      try {
+        await runTmWatch(watch)
+      } catch (err) {
+        console.error(`[veille #${watch.id}] ${err.message}`)
+      }
+      await sleep(300) // petit délai entre les veilles
+    }
+  } finally {
+    cycleRunning = false
+  }
+  return true
 }
 
 /** Démarre la boucle de veille périodique. */
